@@ -4,10 +4,11 @@ import { Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-r
 import {
   Activity, ArrowRight, BarChart3, Bell, CheckCircle2, ChevronDown, CircleHelp, CreditCard,
   Clock3, ExternalLink, FileCheck2, Gauge, Globe2, LayoutDashboard, LifeBuoy,
-  Link2, LockKeyhole, LogOut, Mail, Network, Plus, ScanSearch, Settings2,
+  Link2, LockKeyhole, Mail, Network, Plus, ScanSearch, Settings2,
   ShieldCheck, Sparkles, Timer, TriangleAlert, Users, X
 } from 'lucide-react';
 import { establishRecoverySession, exchangeAuthCodeOnce, hasSupabaseConfig, recoverySession, supabase } from './lib/supabase';
+import { getZenVentoraAccount } from './lib/zenventora-account';
 
 type Notice = { kind: 'success' | 'error' | 'info'; text: string } | null;
 type Site = { id: string; name: string; start_url: string; normalized_origin: string; created_at: string; sitemap_url?: string | null };
@@ -89,102 +90,27 @@ function ConfigNotice() {
   return <div className="config-warning"><TriangleAlert size={17} /><span><b>Database configuration required</b><br />Add VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY to your local environment. No authentication request has been sent.</span></div>;
 }
 
-function LoginPage() {
+function AccountsRedirect({ view }: { view: "signin" | "signup" | "forgot" }) {
   useEffect(() => {
-    const next = safeNext(new URLSearchParams(window.location.search).get('next'));
-    void getZenVentoraAccount().then(account => account.signIn('siteradar', window.location.origin + next));
-  }, []);
+    const next = safeNext(new URLSearchParams(window.location.search).get("next"));
+    void getZenVentoraAccount().then(account => {
+      const returnTo = window.location.origin + (view === "signup" ? "/setup" : next);
+      window.location.replace(account.authUrl(view, {
+        product: "siteradar",
+        returnTo
+      }));
+    });
+  }, [view]);
   return <div className="app-loading"><span className="spinner"/> Redirecting to ZenVentora Accounts…</div>;
 }
 
-function LegacyLoginPage() {
-  const [email, setEmail] = useState(''); const [password, setPassword] = useState('');
-  const [busy, setBusy] = useState(false); const [notice, setNotice] = useState<Notice>(null);
-  const navigate = useNavigate(); const location = useLocation();
-  const next = safeNext(new URLSearchParams(location.search).get('next'));
-  async function submit(e: FormEvent) {
-    e.preventDefault(); if (!supabase) return setNotice({kind:'error', text:'Supabase is not configured yet.'});
-    setBusy(true); setNotice(null);
-    try {
-      const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-      if (error) throw error;
-      navigate(next, { replace: true });
-    } catch (err) { setNotice({kind:'error', text: err instanceof Error ? err.message : 'Sign in failed. Check your details and try again.'}); }
-    finally { setBusy(false); }
-  }
-  return <AuthLayout title="Welcome back" subtitle="Sign in to see your websites, audit history and the issues that need attention."
-    footer={<>New to SiteRadar? <Link to="/login?mode=signup">Create an account <ArrowRight size={14} /></Link></>}>
-    {!hasSupabaseConfig && <ConfigNotice />}
-    <NoticeBar notice={notice} dismiss={() => setNotice(null)} />
-    <form onSubmit={submit} className="auth-form">
-      <Field label="Email address" id="login-email" type="email" value={email} onChange={setEmail} placeholder="you@company.com" autoComplete="email" />
-      <div className="field-head"><span>Password</span><Link to="/forgot-password">Forgot password?</Link></div>
-      <Field label="" id="login-password" type="password" value={password} onChange={setPassword} placeholder="Enter your password" autoComplete="current-password" />
-      <button className="btn primary full" type="submit" disabled={busy || !hasSupabaseConfig}>{busy ? <><span className="spinner" /> Signing in…</> : <>Sign in <ArrowRight size={16} /></>}</button>
-    </form>
-    <div className="auth-divider"><span /> <small>BUILT FOR CLEARER DECISIONS</small> <span /></div>
-    <div className="auth-trust"><ShieldCheck size={16} /><span>Your audit data stays in your private workspace.</span></div>
-  </AuthLayout>;
+function SignupRedirect(){
+  return <AccountsRedirect view="signup"/>;
 }
 
-function SignupPage() {
-  useEffect(() => {
-    void getZenVentoraAccount().then(account => account.signUp('siteradar', window.location.origin + '/setup'));
-  }, []);
-  return <div className="app-loading"><span className="spinner"/> Redirecting to ZenVentora Accounts…</div>;
-}
-
-function LegacySignupPage() {
-  const [email, setEmail] = useState(''); const [password, setPassword] = useState('');
-  const [confirm, setConfirm] = useState(''); const [name, setName] = useState('');
-  const [busy, setBusy] = useState(false); const [notice, setNotice] = useState<Notice>(null); const [done, setDone] = useState(false);
-  const navigate = useNavigate(); const location = useLocation();
-  const edition = parseEdition(new URLSearchParams(location.search).get('edition'));
-  const requestedProduct = new URLSearchParams(location.search).get('product') || 'siteradar';
-  const productAvailable = requestedProduct === 'siteradar';
-  const callbackUrl = appUrl + '/auth/callback?next=/setup&edition=' + encodeURIComponent(edition);
-  async function submit(e: FormEvent) {
-    e.preventDefault(); if (!supabase) return setNotice({kind:'error',text:'Supabase is not configured yet.'});
-    if (!productAvailable) return setNotice({kind:'error',text:'The '+requestedProduct+' sign-up flow is not connected yet. No account was created for another product.'});
-    if (password.length < 8) return setNotice({kind:'error',text:'Use a password with at least 8 characters.'});
-    if (password !== confirm) return setNotice({kind:'error',text:'Passwords do not match.'});
-    setBusy(true); setNotice(null);
-    try {
-      const { data, error } = await supabase.auth.signUp({ email: email.trim(), password,
-        options: { data: { name: name.trim(), requested_edition: edition, requested_product: 'siteradar' }, emailRedirectTo: callbackUrl } });
-      if (error) throw error;
-      if (data.session) navigate('/setup?edition=' + encodeURIComponent(edition), {replace:true});
-      else setDone(true);
-    } catch (err) { setNotice({kind:'error',text:err instanceof Error ? err.message : 'Could not create your account. Try again.'}); }
-    finally { setBusy(false); }
-  }
-  async function resendConfirmation() {
-    if (!supabase) return setNotice({kind:'error',text:'Supabase is not configured yet.'});
-    if (!email.trim()) { setDone(false); return setNotice({kind:'info',text:'Enter your email address and submit the signup form again.'}); }
-    setBusy(true); setNotice(null);
-    try {
-      const {error} = await supabase.auth.resend({type:'signup', email:email.trim(), options:{emailRedirectTo:callbackUrl}});
-      if (error) throw error;
-      setNotice({kind:'success',text:'If confirmation can be resent, a fresh link has been sent. Check your inbox and spam folder.'});
-    } catch { setNotice({kind:'info',text:'If the account still needs confirmation, a fresh link may have been sent. Wait briefly before trying again.'}); }
-    finally { setBusy(false); }
-  }
-  return <AuthLayout title={done ? 'Check your inbox' : 'Create your account'} subtitle={done ? 'We sent a confirmation link if your request was accepted. Open it to activate your SiteRadar workspace.' : 'Start discovering what is working on your website — and what needs fixing.'}
-    footer={done ? <>Already confirmed? <Link to="/login">Sign in <ArrowRight size={14} /></Link></> : <>Already have an account? <Link to="/login">Sign in <ArrowRight size={14} /></Link></>}>
-    {done ? <div className="success-panel"><span className="success-icon"><Mail size={24} /></span><h2>Verify your email</h2><p>Check your inbox and spam folder for the confirmation email. The link may expire; return here to request another one if needed.</p><button className="btn primary full" disabled={busy || !hasSupabaseConfig} onClick={resendConfirmation}>{busy ? <><span className="spinner"/> Sending…</> : <>Resend confirmation email <ArrowRight size={15}/></>}</button><button className="btn secondary full" onClick={() => {setDone(false);setNotice(null);}}>Return to sign up</button></div> : <>
-      {!hasSupabaseConfig && <ConfigNotice />}<NoticeBar notice={notice} dismiss={() => setNotice(null)} />
-      {!productAvailable&&<div className="notice error">The {requestedProduct} sign-up flow is not connected yet. No account will be created for another product from this page. <Link to="/products">View products</Link>.</div>}
-      <form onSubmit={submit} className="auth-form">
-        <Field label="Your name" id="signup-name" value={name} onChange={setName} placeholder="Name" autoComplete="name" />
-        <Field label="Work email" id="signup-email" type="email" value={email} onChange={setEmail} placeholder="you@company.com" autoComplete="email" />
-        <Field label="Password" id="signup-password" type="password" value={password} onChange={setPassword} placeholder="At least 8 characters" autoComplete="new-password" hint="Use a unique password with 8 or more characters." />
-        <Field label="Confirm password" id="signup-confirm" type="password" value={confirm} onChange={setConfirm} placeholder="Enter password again" autoComplete="new-password" />
-        <div className="selected-edition-note"><b>Selected edition: {edition[0].toUpperCase() + edition.slice(1)}</b><span>{edition === 'free' ? 'Permanent Free access. No payment details required.' : 'Includes a configurable trial. Payment is not collected during this setup flow.'}</span><Link to={'/pricing?edition=' + edition}>Change edition</Link></div>
-        <button className="btn primary full" type="submit" disabled={busy || !hasSupabaseConfig || !productAvailable}>{busy ? <><span className="spinner" /> Creating account…</> : <>Create account <ArrowRight size={16} /></>}</button>
-        <p className="legal-note">By creating an account, you agree to the product terms and privacy notice.</p>
-      </form>
-    </>}
-  </AuthLayout>;
+function AuthEntryPage(){
+  const mode=new URLSearchParams(window.location.search).get("mode");
+  return <AccountsRedirect view={mode==="signup" ? "signup" : "signin"}/>;
 }
 
 function SetupPage() {
