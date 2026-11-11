@@ -447,6 +447,22 @@ const navGroups = [
   ]}
 ];
 
+function ZenVentoraAccountMenu({ email }: { email: string }) {
+  const [open, setOpen] = useState(false);
+  const name = email ? email.split("@")[0] : "ZenVentora account";
+  const initials = name.trim().split(/\s+/).slice(0, 2).map(part => part[0]?.toUpperCase() || "").join("") || "Z";
+  return <div className="zv-account-profile">
+    <button className="zv-account-trigger" type="button" aria-expanded={open} onClick={() => setOpen(v => !v)}>
+      <span className="zv-account-avatar">{initials}</span><span>{name}</span>
+    </button>
+    <div className="zv-account-menu" hidden={!open}>
+      <div className="zv-account-menu-head"><span className="zv-account-avatar">{initials}</span><span><strong>{name}</strong><small>{email}</small></span></div>
+      <a href="#" onClick={event => { event.preventDefault(); void getZenVentoraAccount().then(account => account.openAccount()); }}>Manage ZenVentora Account ↗</a>
+      <button type="button" onClick={() => void getZenVentoraAccount().then(account => account.signOut())}>Sign out</button>
+    </div>
+  </div>;
+}
+
 function AppShell({ children }: {children: React.ReactNode}) {
   const location = useLocation(); const navigate = useNavigate();
   const [email, setEmail] = useState(''); const [collapsed, setCollapsed] = useState(false);
@@ -480,7 +496,7 @@ function AppShell({ children }: {children: React.ReactNode}) {
     <header className="topbar">
       <div className="topbar-brand"><Brand compact /><button className="collapse-button" onClick={()=>setCollapsed(v=>!v)} aria-label="Toggle navigation"><ChevronDown size={15}/></button></div>
       <div className="topbar-context"><span className="live-dot"/><span>Website intelligence</span><span className="crumb">/</span><b>{current?.label || 'Workspace'}</b></div>
-      <div className="topbar-actions"><button className="top-icon" title={'Notifications'+(notificationCount?' ('+notificationCount+' pending)':'')} aria-label={'Open notifications'+(notificationCount?', '+notificationCount+' pending':'')} onClick={()=>navigate('/app/notifications')}><Bell size={17}/>{notificationCount>0&&<i/>}</button><div className="avatar">{(email[0]||'U').toUpperCase()}</div><button className="user-email account-settings-button" title="Manage ZenVentora account" onClick={()=>void getZenVentoraAccount().then(account=>account.openAccount())}>{email || 'Signed in'}</button><button className="top-icon" title="Sign out" onClick={signout}><LogOut size={17}/></button></div>
+      <div className="topbar-actions"><button className="top-icon" title={'Notifications'+(notificationCount?' ('+notificationCount+' pending)':'')} aria-label={'Open notifications'+(notificationCount?', '+notificationCount+' pending':'')} onClick={()=>navigate('/app/notifications')}><Bell size={17}/>{notificationCount>0&&<i/>}</button><ZenVentoraAccountMenu email={email} /></div>
     </header>
     <div className="app-body">
       <aside className="sidebar">
