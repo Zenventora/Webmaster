@@ -480,7 +480,7 @@ function AppShell({ children }: {children: React.ReactNode}) {
     <header className="topbar">
       <div className="topbar-brand"><Brand compact /><button className="collapse-button" onClick={()=>setCollapsed(v=>!v)} aria-label="Toggle navigation"><ChevronDown size={15}/></button></div>
       <div className="topbar-context"><span className="live-dot"/><span>Website intelligence</span><span className="crumb">/</span><b>{current?.label || 'Workspace'}</b></div>
-      <div className="topbar-actions"><button className="top-icon" title={'Notifications'+(notificationCount?' ('+notificationCount+' pending)':'')} aria-label={'Open notifications'+(notificationCount?', '+notificationCount+' pending':'')} onClick={()=>navigate('/app/notifications')}><Bell size={17}/>{notificationCount>0&&<i/>}</button><div className="avatar">{(email[0]||'U').toUpperCase()}</div><div className="user-email">{email || 'Signed in'}</div><button className="top-icon" title="Sign out" onClick={signout}><LogOut size={17}/></button></div>
+      <div className="topbar-actions"><button className="top-icon" title={'Notifications'+(notificationCount?' ('+notificationCount+' pending)':'')} aria-label={'Open notifications'+(notificationCount?', '+notificationCount+' pending':'')} onClick={()=>navigate('/app/notifications')}><Bell size={17}/>{notificationCount>0&&<i/>}</button><div className="avatar">{(email[0]||'U').toUpperCase()}</div><button className="user-email account-settings-button" title="Manage ZenVentora account" onClick={()=>void getZenVentoraAccount().then(account=>account.openAccount())}>{email || 'Signed in'}</button><button className="top-icon" title="Sign out" onClick={signout}><LogOut size={17}/></button></div>
     </header>
     <div className="app-body">
       <aside className="sidebar">
@@ -1397,24 +1397,29 @@ function SignupRedirect(){
   return <Navigate to={"/login?"+params.toString()} replace/>;
 }
 
-function AuthEntryPage(){
-  const location=useLocation();
-  const navigate=useNavigate();
-  const mode=new URLSearchParams(location.search).get("mode");
-  const [checkingSession,setCheckingSession]=useState(true);
-  useEffect(()=>{
-    let active=true;
-    if(!supabase){setCheckingSession(false);return;}
-    void supabase.auth.getSession().then(({data,error})=>{
-      if(!active)return;
-      if(!error&&data.session)navigate('/app',{replace:true});
-      else setCheckingSession(false);
-    }).catch(()=>{if(active)setCheckingSession(false);});
-    return()=>{active=false;};
-  },[navigate]);
-  if(checkingSession)return <div className="app-loading"><span className="spinner"/> Checking your account…</div>;
-  return mode==="signup"?<SignupPage/>:<LoginPage/>;
+function AccountsRedirect({ view }: { view: "signin" | "signup" | "forgot" }) {
+  useEffect(() => {
+    const next = safeNext(new URLSearchParams(window.location.search).get("next"));
+    void getZenVentoraAccount().then(account => {
+      const returnTo = window.location.origin + (view === "signup" ? "/setup" : next);
+      window.location.replace(account.authUrl(view, {
+        product: "siteradar",
+        returnTo
+      }));
+    });
+  }, [view]);
+  return <div className="app-loading"><span className="spinner"/> Redirecting to ZenVentora Accounts…</div>;
 }
+
+function SignupRedirect(){
+  return <AccountsRedirect view="signup"/>;
+}
+
+function AuthEntryPage(){
+  const mode=new URLSearchParams(window.location.search).get("mode");
+  return <AccountsRedirect view={mode==="signup" ? "signup" : "signin"}/>;
+}
+
 export default function App(){
   return <Routes>
     <Route path="/" element={<Navigate to="/login" replace/>}/>
@@ -1423,8 +1428,8 @@ export default function App(){
     <Route path="/login" element={<AuthEntryPage/>}/>
     <Route path="/signup" element={<SignupRedirect/>}/>
     <Route path="/setup" element={<ProtectedRoute><SetupPage/></ProtectedRoute>}/>
-    <Route path="/forgot-password" element={<ForgotPasswordPage/>}/>
-    <Route path="/reset-password" element={<ResetPasswordPage/>}/>
+    <Route path="/forgot-password" element={<AccountsRedirect view="forgot"/>}/>
+    <Route path="/reset-password" element={<AccountsRedirect view="forgot"/>}/>
     <Route path="/auth/callback" element={<AuthCallbackPage/>}/>
     <Route path="/help" element={<HelpPage/>}/>
     <Route path="/app" element={<ProtectedRoute><AppShell><OverviewPage/></AppShell></ProtectedRoute>}/>
