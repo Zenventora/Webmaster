@@ -16,6 +16,7 @@ export type ZenVentoraAccountClient = {
   openAccount(): void;
   signOut(): void;
   getAccessToken(): string | null;
+  authUrl(view: "signin" | "signup" | "forgot", options?: { product?: string; returnTo?: string; productFlow?: string }): string;
 };
 
 declare global {
