@@ -7,13 +7,12 @@ import {
   Link2, LockKeyhole, Mail, Network, Plus, ScanSearch, Settings2,
   ShieldCheck, Sparkles, Timer, TriangleAlert, Users, X
 } from 'lucide-react';
-import { establishRecoverySession, exchangeAuthCodeOnce, hasSupabaseConfig, recoverySession, supabase } from './lib/supabase';
+import { exchangeAuthCodeOnce, hasSupabaseConfig, supabase } from './lib/supabase';
 import { getZenVentoraAccount } from './lib/zenventora-account';
 
 type Notice = { kind: 'success' | 'error' | 'info'; text: string } | null;
 type Site = { id: string; name: string; start_url: string; normalized_origin: string; created_at: string; sitemap_url?: string | null };
 
-const appUrl = (import.meta.env.VITE_APP_URL || window.location.origin).replace(/\/$/, '');
 type Edition = 'free' | 'standard' | 'ultimate';
 type FeatureCatalogEntry = {feature_key:string;display_name:string;category:string;implementation_status:'available'|'beta'|'coming_soon'|'retired';description:string;sort_order:number};
 const editionKeys: Edition[] = ['free', 'standard', 'ultimate'];
@@ -247,7 +246,7 @@ function ProtectedRoute({ children }: {children: React.ReactNode}) {
       if (!active) return;
       const evaluate = async (session: Awaited<ReturnType<typeof account.getSession>>) => {
         if (!session?.user) { if (active) setState('signed-out'); return; }
-        const metadataEdition = parseEdition(session.user.user_metadata?.requested_edition);
+        const metadataEdition = parseEdition(String(session.user.user_metadata?.requested_edition || ''));
         if (active) setRequestedEdition(metadataEdition);
         try {
           if (!supabase) throw new Error('SiteRadar data client is not configured.');
@@ -336,9 +335,8 @@ function AppShell({ children }: {children: React.ReactNode}) {
       ]);
       if (subscription) { setPlanKey(parseEdition(subscription.plan_key)); setSubscriptionStatus(subscription.status); setTrialEndsAt(subscription.trial_ends_at); }
       setNotificationCount(pendingNotifications??0);
-    })().catch(()=>{});
+    }).catch(()=>{});
   }, []);
-  async function signout() { await (await getZenVentoraAccount()).signOut(); navigate('/login',{replace:true}); }
   const current = navGroups.flatMap(g=>g.items).find(item=>item.to===location.pathname);
   return <div className={'app-shell ' + (collapsed?'nav-collapsed':'')}>
     <header className="topbar">
