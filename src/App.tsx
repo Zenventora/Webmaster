@@ -197,84 +197,6 @@ function SetupPage() {
   </AuthLayout>;
 }
 
-function ForgotPasswordPage() {
-  const [email, setEmail] = useState(''); const [busy, setBusy] = useState(false);
-  const [done, setDone] = useState(false); const [notice, setNotice] = useState<Notice>(null);
-  async function submit(e: FormEvent) {
-    e.preventDefault(); if (!supabase) return setNotice({kind:'error',text:'Supabase is not configured yet.'});
-    setBusy(true); setNotice(null);
-    try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: appUrl + '/reset-password?type=recovery' });
-      if (error) throw error;
-      setDone(true);
-    } catch (err) { setNotice({kind:'error',text:err instanceof Error ? err.message : 'Could not request a reset email. Please try again.'}); }
-    finally { setBusy(false); }
-  }
-  return <AuthLayout title={done ? 'Check your inbox' : 'Reset your password'} subtitle={done ? 'If an account matches that email, a password reset link has been sent.' : 'Enter the email address on your account and we will send a secure reset link.'}
-    footer={<>Remembered your password? <Link to="/login">Back to sign in <ArrowRight size={14} /></Link></>}>
-    {!hasSupabaseConfig && <ConfigNotice />}<NoticeBar notice={notice} dismiss={() => setNotice(null)} />
-    {done ? <div className="success-panel"><span className="success-icon"><Mail size={24} /></span><h2>Check your email</h2><p>Use the latest reset link. If it has expired, request a new one here.</p><button className="btn secondary full" onClick={() => setDone(false)}>Request another link</button></div> :
-      <form onSubmit={submit} className="auth-form"><Field label="Email address" id="forgot-email" type="email" value={email} onChange={setEmail} placeholder="you@company.com" autoComplete="email" />
-        <button className="btn primary full" type="submit" disabled={busy || !hasSupabaseConfig}>{busy ? <><span className="spinner" /> Sending…</> : <>Send reset link <ArrowRight size={16} /></>}</button>
-      </form>}
-  </AuthLayout>;
-}
-
-function ResetPasswordPage() {
-  const [password, setPassword] = useState(''); const [confirm, setConfirm] = useState('');
-  const [busy, setBusy] = useState(false); const [notice, setNotice] = useState<Notice>(null); const [done, setDone] = useState(false);
-  const [recoveryReady, setRecoveryReady] = useState(recoverySession.active);
-  const [checkingRecovery, setCheckingRecovery] = useState(true);
-  useEffect(() => {
-    if (!supabase) { setCheckingRecovery(false); return; }
-    if (recoverySession.active) { setRecoveryReady(true); setCheckingRecovery(false); }
-    const {data:{subscription}} = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'PASSWORD_RECOVERY') { recoverySession.active = true; setRecoveryReady(true); setCheckingRecovery(false); }
-      if (event === 'SIGNED_OUT') { recoverySession.active = false; setRecoveryReady(false); }
-    });
-    const params = new URLSearchParams(window.location.search);
-    const code = params.get('code');
-    if (params.get('type') === 'recovery' && code && !recoverySession.active) {
-      setCheckingRecovery(true);
-      void establishRecoverySession(code).then(result => {
-        if (result.ok) { setRecoveryReady(true); setNotice(null); }
-        else setNotice({kind:'error',text:'This password-reset link is invalid or expired. Request a new one.'});
-        setCheckingRecovery(false);
-      });
-    } else {
-      setCheckingRecovery(false);
-    }
-    return () => { subscription.unsubscribe(); };
-  }, []);
-  async function submit(e: FormEvent) {
-    e.preventDefault(); if (!supabase) return setNotice({kind:'error',text:'Supabase is not configured yet.'});
-    if (password.length < 8) return setNotice({kind:'error',text:'Use a password with at least 8 characters.'});
-    if (password !== confirm) return setNotice({kind:'error',text:'Passwords do not match.'});
-    setBusy(true); setNotice(null);
-    try {
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      if (sessionError) throw sessionError;
-      if (!recoveryReady || !recoverySession.active || !session) throw new Error('This reset link is expired or invalid. Request a new password reset link.');
-      const { error } = await supabase.auth.updateUser({ password });
-      if (error) throw error;
-      recoverySession.active = false;
-      await supabase.auth.signOut();
-      setDone(true);
-    } catch (err) { setNotice({kind:'error',text:err instanceof Error ? err.message : 'Could not update your password.'}); }
-    finally { setBusy(false); }
-  }
-  return <AuthLayout title={done ? 'Password updated' : 'Choose a new password'} subtitle={done ? 'Your password has been updated. Continue to sign in.' : 'Use the secure link from your email and choose a new password for your account.'}
-    footer={<>Ready to continue? <Link to="/login">Sign in <ArrowRight size={14} /></Link></>}>
-    <NoticeBar notice={notice} dismiss={() => setNotice(null)} />
-    {checkingRecovery && !recoveryReady && !done ? <div className="success-panel"><span className="spinner"/><h2>Checking secure link</h2><p>We are validating your password recovery session.</p></div> : !recoveryReady && !done ? <div className="success-panel"><span className="success-icon"><LockKeyhole size={24}/></span><h2>Recovery link required</h2><p>Open the latest password-reset link from your email. For your safety, a normal signed-in session cannot be used to reset a password here.</p><Link className="btn primary full" to="/forgot-password">Request a new reset link <ArrowRight size={16}/></Link></div> : done ? <div className="success-panel"><span className="success-icon"><CheckCircle2 size={24} /></span><h2>All set</h2><p>Your password is saved. Sign in again with your new password.</p><Link className="btn primary full" to="/login">Go to sign in <ArrowRight size={16}/></Link></div> :
-      <form onSubmit={submit} className="auth-form">
-        <Field label="New password" id="reset-password" type="password" value={password} onChange={setPassword} placeholder="At least 8 characters" autoComplete="new-password" />
-        <Field label="Confirm new password" id="reset-confirm" type="password" value={confirm} onChange={setConfirm} placeholder="Enter password again" autoComplete="new-password" />
-        <button className="btn primary full" type="submit" disabled={busy || !hasSupabaseConfig}>{busy ? <><span className="spinner" /> Updating…</> : <>Update password <ArrowRight size={16} /></>}</button>
-      </form>}
-  </AuthLayout>;
-}
-
 function AuthCallbackPage() {
   const navigate = useNavigate(); const location = useLocation();
   const [notice, setNotice] = useState<Notice>({kind:'info',text:'Checking your confirmation link…'});
@@ -1331,36 +1253,6 @@ function SiteDetailPage(){
 }
 
 function HelpPage(){return <AuthLayout title="Help & support" subtitle="SiteRadar is being built in stages. You can return to the product at any time." footer={<>Already have an account? <Link to="/login">Sign in <ArrowRight size={14}/></Link></>}><p className="help-copy">For product questions, use your team's approved support contact. Keep secrets and account tokens out of support messages.</p><Link className="btn secondary full" to="/">Back to home</Link></AuthLayout>}
-
-function SignupRedirect(){
-  const location=useLocation();
-  const params=new URLSearchParams(location.search);
-  params.set("mode","signup");
-  return <Navigate to={"/login?"+params.toString()} replace/>;
-}
-
-function AccountsRedirect({ view }: { view: "signin" | "signup" | "forgot" }) {
-  useEffect(() => {
-    const next = safeNext(new URLSearchParams(window.location.search).get("next"));
-    void getZenVentoraAccount().then(account => {
-      const returnTo = window.location.origin + (view === "signup" ? "/setup" : next);
-      window.location.replace(account.authUrl(view, {
-        product: "siteradar",
-        returnTo
-      }));
-    });
-  }, [view]);
-  return <div className="app-loading"><span className="spinner"/> Redirecting to ZenVentora Accounts…</div>;
-}
-
-function SignupRedirect(){
-  return <AccountsRedirect view="signup"/>;
-}
-
-function AuthEntryPage(){
-  const mode=new URLSearchParams(window.location.search).get("mode");
-  return <AccountsRedirect view={mode==="signup" ? "signup" : "signin"}/>;
-}
 
 export default function App(){
   return <Routes>
