@@ -90,6 +90,14 @@ function ConfigNotice() {
 }
 
 function LoginPage() {
+  useEffect(() => {
+    const next = safeNext(new URLSearchParams(window.location.search).get('next'));
+    void getZenVentoraAccount().then(account => account.signIn('siteradar', window.location.origin + next));
+  }, []);
+  return <div className="app-loading"><span className="spinner"/> Redirecting to ZenVentora Accounts…</div>;
+}
+
+function LegacyLoginPage() {
   const [email, setEmail] = useState(''); const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false); const [notice, setNotice] = useState<Notice>(null);
   const navigate = useNavigate(); const location = useLocation();
@@ -120,6 +128,13 @@ function LoginPage() {
 }
 
 function SignupPage() {
+  useEffect(() => {
+    void getZenVentoraAccount().then(account => account.signUp('siteradar', window.location.origin + '/setup'));
+  }, []);
+  return <div className="app-loading"><span className="spinner"/> Redirecting to ZenVentora Accounts…</div>;
+}
+
+function LegacySignupPage() {
   const [email, setEmail] = useState(''); const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState(''); const [name, setName] = useState('');
   const [busy, setBusy] = useState(false); const [notice, setNotice] = useState<Notice>(null); const [done, setDone] = useState(false);
@@ -378,26 +393,27 @@ function ProtectedRoute({ children }: {children: React.ReactNode}) {
   const [requestedEdition, setRequestedEdition] = useState<Edition>('free');
   const location = useLocation();
   useEffect(() => {
-    if (!supabase) { setState('signed-out'); return; }
     let active = true;
-    async function evaluate(session: import('@supabase/supabase-js').Session | null) {
-      if (!session) { if (active) setState('signed-out'); return; }
-      const metadataEdition = parseEdition(session.user.user_metadata?.requested_edition);
-      if (active) setRequestedEdition(metadataEdition);
-      try {
-        const { data, error } = await supabase!.from('workspace_members').select('workspace_id').eq('user_id', session.user.id).not('joined_at', 'is', null).limit(1);
-        if (error) throw error;
-        if (active) setState(data && data.length ? 'ready' : 'needs-setup');
-      } catch {
-        if (active) setState('error');
-      }
-    }
-    const {data:{subscription}} = supabase.auth.onAuthStateChange((_event, session) => {
-      // Defer database reads until after the auth event callback has returned.
-      Promise.resolve().then(() => evaluate(session));
-    });
-    void supabase.auth.getSession().then(({data,error}) => evaluate(!error ? data.session : null)).catch(() => { if (active) setState('signed-out'); });
-    return () => { active = false; subscription.unsubscribe(); };
+    let unsubscribe = () => {};
+    getZenVentoraAccount().then(account => {
+      if (!active) return;
+      const evaluate = async (session: Awaited<ReturnType<typeof account.getSession>>) => {
+        if (!session?.user) { if (active) setState('signed-out'); return; }
+        const metadataEdition = parseEdition(session.user.user_metadata?.requested_edition);
+        if (active) setRequestedEdition(metadataEdition);
+        try {
+          if (!supabase) throw new Error('SiteRadar data client is not configured.');
+          const { data, error } = await supabase.from('workspace_members').select('workspace_id').eq('user_id', session.user.id).not('joined_at', 'is', null).limit(1);
+          if (error) throw error;
+          if (active) setState(data && data.length ? 'ready' : 'needs-setup');
+        } catch {
+          if (active) setState('error');
+        }
+      };
+      account.getSession().then(evaluate);
+      unsubscribe = account.onSessionChange(session => { void evaluate(session); });
+    }).catch(() => { if (active) setState('signed-out'); });
+    return () => { active = false; unsubscribe(); };
   }, []);
   if (state === 'loading' || state === 'signed-in') return <div className="app-loading"><span className="spinner" /> Checking your workspace…</div>;
   if (state === 'error') return <div className="app-loading"><div className="success-panel"><h2>Could not load your workspace</h2><p>Check your connection and try again. Your session has not been deleted.</p><button className="btn primary" onClick={()=>window.location.reload()}>Retry <ArrowRight size={15}/></button></div></div>;
@@ -440,12 +456,11 @@ function AppShell({ children }: {children: React.ReactNode}) {
   const [trialEndsAt, setTrialEndsAt] = useState<string | null>(null);
   const [notificationCount, setNotificationCount] = useState(0);
   useEffect(() => {
-    if (!supabase) return;
-    void supabase.auth.getUser().then(({data})=>setEmail(data.user?.email || ''));
-    void (async()=>{
-      await supabase!.rpc('refresh_siteradar_subscription');
-      const {data:userData,error:userError}=await supabase!.auth.getUser();if(userError)throw userError;if(!userData.user)return;
-      const membership=await getActiveWorkspaceMembership(userData.user.id);
+    void getZenVentoraAccount().then(account => account.getSession()).then(async session => {
+      if (!session?.user || !supabase) return;
+      setEmail(session.user.email || '');
+      await supabase.rpc('refresh_siteradar_subscription');
+      const membership=await getActiveWorkspaceMembership(session.user.id);
       const {data:workspace,error:workspaceError}=await supabase!.from('workspaces').select('id,name,plan_key').eq('id',membership.workspace_id).maybeSingle();
       if(workspaceError)throw workspaceError;
       if (!workspace) return;
@@ -459,7 +474,7 @@ function AppShell({ children }: {children: React.ReactNode}) {
       setNotificationCount(pendingNotifications??0);
     })().catch(()=>{});
   }, []);
-  async function signout() { await supabase?.auth.signOut(); navigate('/login',{replace:true}); }
+  async function signout() { await (await getZenVentoraAccount()).signOut(); navigate('/login',{replace:true}); }
   const current = navGroups.flatMap(g=>g.items).find(item=>item.to===location.pathname);
   return <div className={'app-shell ' + (collapsed?'nav-collapsed':'')}>
     <header className="topbar">
