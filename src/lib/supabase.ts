@@ -6,12 +6,10 @@ const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 export const hasSupabaseConfig = Boolean(url && key);
 export const supabase = hasSupabaseConfig
   ? createClient(url!, key!, {
+      accessToken: async () => window.ZenVentoraAccount?.getAccessToken() || null,
       auth: {
-        flowType: 'pkce',
-        autoRefreshToken: true,
-        persistSession: true,
-        // Callback routes exchange PKCE codes explicitly to avoid a double exchange
-        // and to distinguish password-recovery links from ordinary signed-in sessions.
+        autoRefreshToken: false,
+        persistSession: false,
         detectSessionInUrl: false,
       },
     })
